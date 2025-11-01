@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Customer Message Form</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="container">
+  <h1>Send a Message</h1>
+  <form method="post" action="/api/incoming">
+    <input name="customer_id" placeholder="Customer ID" required><br>
+    <input name="customer_name" placeholder="Customer Name"><br>
+    <input name="subject" placeholder="Subject"><br>
+    <textarea name="body" placeholder="Your Message" required></textarea><br>
+    <button type="submit">Send Message</button>
+  </form>
+
+  <hr>
+  <p>Or import CSV (on server): POST /import-csv</p>
+  <p><a href="/agent">Open Agent Portal</a></p>
+</div>
+</body>
+</html>
