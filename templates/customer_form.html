@@ -1,0 +1,113 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body class="bg-black min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-6 flex flex-col" style="min-height:600px;">
+    <div class="flex items-center mb-4">
+      <span class="text-blue-500 font-bold text-xl">Support Chat</span>
+    </div>
+    <div id="chat_messages" class="flex-1 overflow-y-auto mb-4 px-2" style="scroll-behavior:smooth;"></div>
+    <form id="msgForm" class="flex items-center gap-2 mt-auto">
+      <input name="customer_name" id="customer_name" type="text" placeholder="Your Name" required class="rounded-full px-4 py-2 border border-gray-300 shadow focus:outline-none focus:ring-2 focus:ring-blue-500 w-32" value="User" style="display:none">
+      <input name="body" id="body" type="text" placeholder="Type your message..." required autocomplete="off" class="flex-1 rounded-full px-4 py-2 border border-gray-300 shadow focus:outline-none focus:ring-2 focus:ring-yellow-400">
+      <button type="submit" class="bg-blue-500 hover:bg-yellow-400 text-white font-bold rounded-full px-6 py-2 shadow">Send</button>
+    </form>
+    <div class="flex gap-2 justify-center mt-4">
+      <button class="bg-yellow-400 text-black rounded-full px-4 py-2 shadow" type="button" onclick="sendOption('Shopping Help')">Shopping Help</button>
+      <button class="bg-blue-500 text-white rounded-full px-4 py-2 shadow" type="button" onclick="sendOption('Feedback')">💬 Feedback</button>
+      <button class="bg-red-500 text-white rounded-full px-4 py-2 shadow" type="button" onclick="sendOption('Human Help')">🧑‍💼 Human Help</button>
+    </div>
+  </div>
+  <script>
+    const socket = io("http://127.0.0.1:8001");
+    const chatMessages = document.getElementById('chat_messages');
+    const customerNameInput = document.getElementById('customer_name');
+    function formatTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }
+    function renderMessages(msgs) {
+      chatMessages.innerHTML = '';
+      if (!msgs.length) {
+        chatMessages.innerHTML += `<div class='flex mb-2'><div class='bg-yellow-400 text-black rounded-2xl px-4 py-2 shadow text-sm max-w-lg'>Hi there! Thank you for reaching out, you are messaging with our chatbot.<br><br>What can we help you with today?<br>Select an option or type your question.</div></div>`;
+      }
+      msgs.forEach(function(msg) {
+        var isUser = msg.sender === customerNameInput.value;
+        var isAI = msg.sender === 'AgentBot';
+        var urgency = msg.urgency_level === 'high';
+        chatMessages.innerHTML += '<div class="flex ' + (isUser ? 'justify-end' : 'justify-start') + ' mb-2">' +
+          '<div class="rounded-2xl px-4 py-2 shadow text-sm max-w-lg relative ' +
+            (isUser ? 'bg-blue-500 text-white' : isAI ? 'bg-yellow-400 text-black' : 'bg-red-500 text-white') + '">' +
+            '<span style="display:block;white-space:pre-line;">' + (msg.message || '') + '</span>' +
+            '<span class="block text-xs text-gray-700 mt-1 text-right">' + formatTime(msg.timestamp) + '</span>' +
+            (urgency ? '<span class="absolute left-2 top-1 text-xs text-red-500 font-bold">URGENT</span>' : '') +
+          '</div>' +
+        '</div>';
+      });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    async function fetchMessages() {
+      const res = await fetch('/api/messages');
+      const msgs = await res.json();
+      const cname = customerNameInput.value;
+      renderMessages(msgs.filter(function(m) { return m.customer_name === cname; }));
+    }
+    document.getElementById('msgForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const customer_name = customerNameInput.value;
+      const body = document.getElementById('body').value;
+      // Immediately show user message
+      const now = new Date();
+      const userMsg = {
+        sender: customer_name,
+        message: body,
+        timestamp: now.toISOString(),
+        urgency_level: ''
+      };
+      window._msgs = [...window._msgs || [], userMsg];
+      renderMessages(window._msgs);
+      // Emit to Socket.IO for agent dashboard (only user message)
+      socket.emit('new_message', userMsg);
+      // Send to backend
+      const res = await fetch('/send_message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'sender=' + encodeURIComponent(customer_name) + '&text=' + encodeURIComponent(body)
+      });
+      document.getElementById('body').value = '';
+      // Get AI response from backend (use 'auto_reply' field)
+      const data = await res.json();
+      if (data && data.auto_reply) {
+        const aiMsg = {
+          sender: 'AgentBot',
+          message: data.auto_reply,
+          timestamp: new Date().toISOString(),
+          urgency_level: ''
+        };
+        window._msgs = [...window._msgs, aiMsg];
+        renderMessages(window._msgs);
+        // Optionally emit to agent dashboard if needed
+      }
+      fetchMessages();
+    };
+    function sendOption(option) {
+      document.getElementById('body').value = option;
+      document.getElementById('msgForm').dispatchEvent(new Event('submit'));
+    }
+    socket.on('new_message', function(msg) {
+      fetchMessages();
+    });
+    customerNameInput.oninput = fetchMessages;
+    window.onload = fetchMessages;
+    setInterval(fetchMessages, 3000);
+  </script>
+</body>
+</html>
